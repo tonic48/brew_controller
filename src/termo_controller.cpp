@@ -12,20 +12,36 @@
 int led = 13; 
 
 float targetTemperature;
-float deltaValue;
-int compressorDelay;
+unsigned int deltaValue;
+unsigned int compressorDelay;
+float tempCalibration;
 int onOff=1;
 int lamp=0;
 String mode="P";
+unsigned long lastCompressorOffTime=0;
+boolean allowCooling();
+
+const int numberParms=10;
+int eepromValues[numberParms];
+
+
 
 
 OneWire  ds(10); // 11 output sensor 18b20
 
 //Functions declaration
-void sendData(float temperature);
+void sendData(double temperature);
 void readConfiguration();
-float getTemp(); 
-void  processInput(String line);   
+float  getTemp(); 
+void  processInput(String line);  
+void setLow();
+void controlLamp();
+void coolingOn();
+void coolingOff();
+void heatingOn();
+void heatingOff();
+void fanOn();
+void fanOff();
 
 void setup() {
   Serial.begin(9600); 
@@ -37,41 +53,41 @@ void setup() {
   pinMode(OUTFAN, OUTPUT);
   pinMode(OUTLAMP, OUTPUT);
 
-}
+} 
 
 void loop() {  
-
+  //reset mode "Parking"
+  mode="P";
   //Read configuration from eprom
   readConfiguration();
   
   float temperature = getTemp();
-  mode="P";
-  //Lamp can be controlled every time
-  if(lamp==1){
-    digitalWrite(OUTLAMP, HIGH);
-  }else{
-    digitalWrite(OUTLAMP, LOW);
-  }
+  controlLamp();
 
   if(onOff==1){
     //Check the temperature
-    if (temperature < targetTemperature-deltaValue) {
+    if (temperature <= targetTemperature-deltaValue) {
       //start heating + fan
-      digitalWrite(OUTHEAT, HIGH);
-      digitalWrite(OUTFAN, HIGH);
+      coolingOff();
+      heatingOn();
       mode="H";
     }else{
-      digitalWrite(OUTCOOL, LOW);
-      digitalWrite(OUTFAN, LOW); 
+      heatingOff();
     }
-    if (temperature > targetTemperature+deltaValue) {
+    if (temperature >= targetTemperature+deltaValue) {
       //start cooling + FAN
-      digitalWrite(OUTCOOL, HIGH);
-      digitalWrite(OUTFAN, HIGH);
-      mode="C";
+      if(allowCooling()){
+        heatingOff();
+        coolingOn();
+        //Mode cooling   
+        mode="C";
+      }else{
+          //Mode Lock (Compressor protection)
+          mode="L";
+      }   
     }  else {
-      digitalWrite(OUTCOOL, LOW);
-      digitalWrite(OUTFAN, LOW);
+      coolingOff();
+
     }
   }else{
     setLow();
@@ -87,11 +103,26 @@ void loop() {
     processInput(incomingChar);
    
   }
-  delay(500);
+  delay(2000);
 }
 
 float getTempDummy(){ 
   return 19.2;
+}
+
+boolean allowCooling(){
+   // compessor delay protection
+  boolean retCode=true;
+  unsigned long curMills=millis();
+   //Serial.println(curMills);
+  if(lastCompressorOffTime>0){
+    if(curMills/1000-lastCompressorOffTime/1000<compressorDelay){
+        retCode=false;
+    }
+  }
+
+  return retCode;
+
 }
 
 void error(){ // stop the program
@@ -100,14 +131,14 @@ void error(){ // stop the program
   digitalWrite(OUTFAN, LOW);
   digitalWrite(OUTLAMP, LOW);
     while(1){ // endless loop
-      digitalWrite(13, !digitalRead(13));
+      digitalWrite(led, !digitalRead(led));
       delay(500);
     }  
 }
 ////
 
-float getTemp(){   // get temperature from the sensor
-  byte data[12];   // sleep for one second???
+float getTemp(){  // get temperature from the sensor
+  byte data[12];   
   byte addr[8];  
   
   if (!ds.search(addr)) {
@@ -122,7 +153,7 @@ float getTemp(){   // get temperature from the sensor
      //error();   
   }
   
-  ds.reset();            
+  ds.reset();
   ds.select(addr);        
   ds.write(0x44);      
   delay(1000);   
@@ -135,38 +166,39 @@ float getTemp(){   // get temperature from the sensor
   int raw = (data[1] << 8) | data[0]; //transform into temperature 
   if (data[7] == 0x10) raw = (raw & 0xFFF0) + 12 - data[6];  
   
-  return raw / 16.0;
-}
+  return round(raw / 16.0 *10.0) / 10.0 + tempCalibration;
+} 
 
 
-void sendData(float temperature){
+void sendData(double temperature){
     //send string to the port
   String line="ARDUINO BREWCONTROL;";
-  line+=temperature;
+  line+=String(onOff);
   line+=";";
-  line+=targetTemperature;
+  line+=String(temperature);
   line+=";";
-  line+=deltaValue;
+  line+=String(targetTemperature);
   line+=";";
-  line+=compressorDelay;
+  line+=String(deltaValue);
+  line+=";";
+  line+=String(compressorDelay);
+  line+=";";
+  line+=String(tempCalibration);
   line+=";";
   line+=mode;
   line+=";";
-  line+=onOff;
+  line+=String(lamp);
   line+=";";
-  line+=lamp;
-  line+=";";
-  
   Serial.println(line);
   delay(2000);
 }
-
+ 
 void  processInput(String line){
-      //Serial.println(line);
+      //Serial.println("Reading data");
 
      char ch[50]="";
 
-     String out[6];
+     String out[numberParms];
      line.toCharArray(ch, 50) ;
      char *p = ch;
      char *str;
@@ -176,104 +208,204 @@ void  processInput(String line){
         i++;
      }
 
-     EEPROM.write(1, out[0].toInt());
-     EEPROM.write(2, out[1].toInt());
-     EEPROM.write(3, out[2].toInt());
-     EEPROM.write(4, out[3].toInt());
-     EEPROM.write(5, out[4].toInt());
-     EEPROM.write(6, out[5].toInt());
-     EEPROM.write(7, out[6].toInt());
-     EEPROM.write(8, out[7].toInt());
-     
-     if(out[0]!=NULL){
-        float newTemperature=out[0].toFloat();
-        //EEPROM.write(1, tempSign);
+    /*EEPROM addresses
+      0 -  main switch status (0 - OFF, 1 - ON)
+      1 -  target temperature sign (1 => '-' , 0 => '+')
+      2 -  target temperature integers (50-99)
+      3 -  target temperarure decimals  (0-9)
+      4 -  difference set value (1-10) C
+      5 -  compressor delay value (1-10) minutes
+      6 -  temperature callibration value sign (0 => '-' , 1 => '+')
+      7 -  temperature callibration value integers (0-10)
+      8 -  temperature callibration value decimals (0-10)
+      9 -  lamp switch status  (0 - OFF, 1 - ON)
+    */
+
+   for (unsigned int i = 0; i < numberParms; i++){
+     int inputVal=out[i].toInt();
+     if(inputVal!=eepromValues[i]){
+       //Write eeprom only when value has chanded
+       EEPROM.write(i, inputVal);
+
      }
+   }   
 }
 
 void readConfiguration(){
-  
+
   String tempSignString="";
-  int address=1;
-  //default temperature 20,0
-  int tempSign= EEPROM.read(1);
-  if(tempSign==255) {
-    tempSign=0;
-    EEPROM.write(1, tempSign); 
+  int tempSign=0;  
+  int tempNbr=0;
+  int tempDec=0;
+
+  String tempCalibrSignString="";
+  int tempCalibrNbr=0;
+  int tempCalibrDec=0;
+
+  for (int i = 0; i < numberParms; i++){
+
+    switch (i) {
+      case 0:
+        onOff =  EEPROM.read(i);
+        if(onOff==255) {
+          onOff=0;
+          EEPROM.write(i, onOff);
+        }
+        eepromValues[i]=onOff;
+        break;
+      case 1:
+          tempSign= EEPROM.read(i);
+          if(tempSign==255) { 
+            tempSign=0;
+            EEPROM.write(i, tempSign); 
+          }
+
+        if(tempSign==1)tempSignString="-";
+        eepromValues[i]=tempSign;
+         break;
+   
+      case 2:
+        tempNbr=  EEPROM.read(i);
+        if(tempNbr==255) {
+          tempNbr=20;
+          EEPROM.write(i, tempNbr); 
+        }
+        eepromValues[i]=tempNbr;
+        break;
+      case 3:
+        tempDec=  EEPROM.read(i);
+        if(tempDec==255) {
+          tempDec=0;
+          EEPROM.write(i, tempDec); 
+        }
+        eepromValues[i]=tempDec;
+        break;
+      case 4:
+        deltaValue =  EEPROM.read(i);
+          if(deltaValue==255) {
+            deltaValue=0;
+            EEPROM.write(i, deltaValue); 
+          }
+        eepromValues[i]=deltaValue;
+        break;
+      case 5:
+        compressorDelay=  EEPROM.read(i);
+          if(compressorDelay>10 || compressorDelay<1) {
+            compressorDelay=3;
+            EEPROM.write(i, compressorDelay); 
+          }
+          eepromValues[i]=compressorDelay;
+        break;
+      case 6:
+          tempSign= EEPROM.read(i);
+          if(tempSign==255) { 
+            tempSign=0;
+            EEPROM.write(i, tempSign); 
+          }
+
+        if(tempSign==1)tempCalibrSignString="-";
+        eepromValues[i]=tempSign;
+        break;
+      case 7:
+        tempCalibrNbr=  EEPROM.read(i);
+        if(tempCalibrNbr==255) {
+          tempCalibrNbr=0;
+          EEPROM.write(i, tempCalibrNbr); 
+        }
+        eepromValues[i]=tempCalibrNbr;
+        break;
+      case 8:
+        tempCalibrDec=  EEPROM.read(i);
+        if(tempCalibrDec==255) {
+          tempCalibrDec=0;
+          EEPROM.write(i, tempCalibrDec); 
+        }
+        eepromValues[i]=tempCalibrDec;
+        break;
+      case 9:
+        lamp =  EEPROM.read(i);
+        if(lamp==255) {
+          lamp=0;
+          EEPROM.write(i, lamp);
+        }
+         eepromValues[i]=lamp;
+        break;
+      default:
+        // if nothing else matches, do the default
+        // default is optional
+        break;
+    }
+
   }
-  if(tempSign==1)tempSignString="-";
-  
-  address=2; 
-  int tempNbr=  EEPROM.read(address);
-  if(tempNbr==255) {
-    tempNbr=20;
-    EEPROM.write(address, tempNbr); 
-  }
-
-  address=3 ;
-  int tempDec=  EEPROM.read(address);
-  if(tempDec==255) {
-    tempDec=0;
-    EEPROM.write(address, tempDec); 
-  }
-  String  temperatureString=tempSignString+tempNbr+"."+tempDec;
-  targetTemperature=temperatureString.toFloat();
-
-  //read delta
-
-  address=4; 
-  int deltaNbr=  EEPROM.read(address);
-  if(deltaNbr==255) {
-    deltaNbr=0;
-    EEPROM.write(address, deltaNbr); 
-  }
-
-  address=5 ;
-  int deltaDec=  EEPROM.read(address);
-  if(deltaDec==255) {
-    deltaDec=5;
-    EEPROM.write(address, deltaDec); 
-  }
-
-   String  deltaString="";
-   deltaString=deltaString+deltaNbr+"."+deltaDec;
-   deltaValue=deltaString.toFloat();
-
-  //read compressor delay
-   address=6; 
-  compressorDelay=  EEPROM.read(address);
-  if(compressorDelay>10 || compressorDelay<1) {
-    compressorDelay=3;
-    EEPROM.write(address, compressorDelay); 
-  }
-
-   address=7;
-   onOff =  EEPROM.read(address);
-   if(onOff==255) {
-     onOff=1;
-     EEPROM.write(address, onOff);
-   }
-
-   address=8;
-   lamp =  EEPROM.read(address);
-   if(lamp==255) {
-     lamp=0;
-     EEPROM.write(address, lamp);
-   }
+  //String  temperatureString=;
+  targetTemperature=(tempSignString+tempNbr+"."+tempDec).toFloat();
+  tempCalibration=(tempCalibrSignString+tempCalibrNbr+"."+tempCalibrDec).toFloat();
    
 }
 
-void setLow(){
+void coolingOff(){
+   digitalWrite(OUTCOOL, LOW);
+   if(OUTCOOL==HIGH){
+      
+      lastCompressorOffTime=millis();
+    }
+    fanOff();
+}
 
-   if(OUTHEAT==HIGH){
-      digitalWrite(OUTHEAT, LOW);
+void coolingOn(){
+   digitalWrite(OUTCOOL, HIGH);
+  if(OUTCOOL==LOW){
+               
+  }
+  fanOn();
+}
+
+void heatingOff(){
+  digitalWrite(OUTHEAT, LOW);
+  if(OUTHEAT==HIGH){
+      
+  }
+  fanOff();
+}
+void heatingOn(){
+   digitalWrite(OUTHEAT, HIGH);
+   if(OUTHEAT==LOW){
+     
+  }
+  fanOn();
+}
+
+void fanOff(){
+ if(OUTFAN==HIGH){
+      digitalWrite(OUTFAN, LOW);
+  }
+}
+
+void fanOn(){
+ if(OUTFAN==LOW){
+    digitalWrite(OUTFAN, HIGH); 
+  }
+}
+
+void setLow(){
+  coolingOff();
+  heatingOff();
+}
+
+void controlLamp(){
+  //Lamp can be controlled every time
+  if(lamp==1){
+    if(OUTLAMP==LOW){
+        digitalWrite(OUTLAMP, HIGH);
     }
-    if(OUTCOOL==HIGH){
-         digitalWrite(OUTCOOL, LOW);
+    
+  }else{
+    if(OUTLAMP==HIGH){
+      digitalWrite(OUTLAMP, LOW);
     }
-    if(OUTFAN==HIGH){
-         digitalWrite(OUTFAN, LOW);
-    }
+    
+  }
+
 }
 
 

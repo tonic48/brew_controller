@@ -6,11 +6,11 @@
         {
             "name": "Win32",
             "includePath": [
-                "d:/Development/Arduino/termo_controller/include",
-                "d:/Development/Arduino/termo_controller/src",
-                "d:/Development/Arduino/termo_controller/lib/EEPROM/src",
-                "d:/Development/Arduino/termo_controller/lib/DallasTemperature_ID54",
-                "d:/Development/Arduino/termo_controller/lib/OneWire-2.3.3.06",
+                "d:/Development/git_workspace/brew_controller/include",
+                "d:/Development/git_workspace/brew_controller/src",
+                "d:/Development/git_workspace/brew_controller/lib/EEPROM/src",
+                "d:/Development/git_workspace/brew_controller/lib/DallasTemperature_ID54",
+                "d:/Development/git_workspace/brew_controller/lib/OneWire-2.3.3.06",
                 "C:/Users/anton.tsyvyan/.platformio/packages/framework-arduinoavr/cores/arduino",
                 "C:/Users/anton.tsyvyan/.platformio/packages/framework-arduinoavr/variants/standard",
                 "C:/Users/anton.tsyvyan/.platformio/lib/DallasTemperature_ID54",
@@ -26,11 +26,11 @@
             "browse": {
                 "limitSymbolsToIncludedHeaders": true,
                 "path": [
-                    "d:/Development/Arduino/termo_controller/include",
-                    "d:/Development/Arduino/termo_controller/src",
-                    "d:/Development/Arduino/termo_controller/lib/EEPROM/src",
-                    "d:/Development/Arduino/termo_controller/lib/DallasTemperature_ID54",
-                    "d:/Development/Arduino/termo_controller/lib/OneWire-2.3.3.06",
+                    "d:/Development/git_workspace/brew_controller/include",
+                    "d:/Development/git_workspace/brew_controller/src",
+                    "d:/Development/git_workspace/brew_controller/lib/EEPROM/src",
+                    "d:/Development/git_workspace/brew_controller/lib/DallasTemperature_ID54",
+                    "d:/Development/git_workspace/brew_controller/lib/OneWire-2.3.3.06",
                     "C:/Users/anton.tsyvyan/.platformio/packages/framework-arduinoavr/cores/arduino",
                     "C:/Users/anton.tsyvyan/.platformio/packages/framework-arduinoavr/variants/standard",
                     "C:/Users/anton.tsyvyan/.platformio/lib/DallasTemperature_ID54",
@@ -45,7 +45,7 @@
                 ]
             },
             "defines": [
-                "PLATFORMIO=40003",
+                "PLATFORMIO=40100",
                 "ARDUINO_AVR_UNO",
                 "F_CPU=16000000L",
                 "ARDUINO_ARCH_AVR",

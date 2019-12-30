@@ -1,0 +1,31 @@
+#include <Arduino.h>
+
+int outHeat = 8;
+int outCool = 9;
+
+int led = 13; 
+
+void setup() {
+   Serial.begin(9600);
+   pinMode(outHeat, OUTPUT);
+   pinMode(outCool, OUTPUT);
+   pinMode(led, OUTPUT); 
+
+   
+  digitalWrite(outHeat, HIGH);
+  digitalWrite(outCool, HIGH);
+}
+
+void loop() {             
+  
+    digitalWrite(led, !digitalRead(led));
+    digitalWrite(outHeat, LOW);
+    delay(1000);
+    digitalWrite(outCool, LOW);
+    delay(1000);
+    digitalWrite(outHeat, HIGH);
+    delay(1000);
+    digitalWrite(outCool, HIGH); 
+    delay(1000);
+    Serial.println("end");         
+}
